@@ -2,7 +2,7 @@ from django.http import JsonResponse
 from django.views import View
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.models import User
-from drf_yasg.utils import swagger_auto_schema
+from asgiref.sync import sync_to_async
 
 from main.models import ReferralCode
 from django.utils.decorators import method_decorator
@@ -13,7 +13,7 @@ from main.serializers import UserCreateSerializer
 @method_decorator(csrf_exempt, name="dispatch")
 class ReferralCodeView(View):
 
-    def post(self, request):
+    async def post(self, request):
         referral_code = request.POST.get("referral_code")
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -22,17 +22,20 @@ class ReferralCodeView(View):
             return JsonResponse({"error": "Missing required parameters."}, status=400)
 
         try:
-            owner_of_the_referral_code = ReferralCode.objects.get(code=referral_code)
+            owner_of_the_referral_code = await sync_to_async(ReferralCode.objects.get)(
+                code=referral_code
+            )
             user_serializer = UserCreateSerializer(data=request.POST)
-            if owner_of_the_referral_code and user_serializer.is_valid(
+            is_valid = await sync_to_async(user_serializer.is_valid)(
                 raise_exception=True
-            ):
-                user = User.objects.create_user(
+            )
+            if owner_of_the_referral_code and is_valid:
+                user = await sync_to_async(User.objects.create_user)(
                     username=username, password=password, email=email
                 )
-                owner_of_the_referral_code.used_by.add(user)
-                owner_of_the_referral_code.save()
-                user.save()
+                await sync_to_async(owner_of_the_referral_code.used_by.add)(user)
+                await sync_to_async(owner_of_the_referral_code.save)()
+                await sync_to_async(user.save)()
                 return JsonResponse({"success": "User registered successfully."})
             else:
                 return JsonResponse(
@@ -41,12 +44,13 @@ class ReferralCodeView(View):
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
-    def get(self, request):
+    async def get(self, request):
         email = request.GET.get("email")
+
         if not email:
             return JsonResponse({"error": "Email parameter is missing."}, status=400)
 
-        referral_code_obj = self.get_referral_code_by_email(email)
+        referral_code_obj = await self.get_referral_code_by_email(email)
         if referral_code_obj:
             return JsonResponse({"referral_code": referral_code_obj.code})
         else:
@@ -55,10 +59,10 @@ class ReferralCodeView(View):
                 status=404,
             )
 
-    def get_referral_code_by_email(self, email):
+    async def get_referral_code_by_email(self, email):
         try:
-            referrer = User.objects.get(email=email)
-            return ReferralCode.objects.get(user=referrer)
+            referrer = await sync_to_async(User.objects.get)(email=email)
+            return await sync_to_async(ReferralCode.objects.get)(user=referrer)
         except ObjectDoesNotExist:
             return None
 
