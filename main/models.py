@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.cache import cache
 
 
 class ReferralCode(models.Model):
@@ -20,9 +21,12 @@ class ReferralCode(models.Model):
         ).update(is_active=False)
 
     def save(self, *args, **kwargs):
+        # Если код активен, деактивируем другие активные коды
         if self.is_active:
             self.deactivate_other_codes()
         super().save(*args, **kwargs)
+        # после сохранения объекта ReferralCode, очищаем кеш для этого пользователя.
+        cache.delete(f"referral_code_{self.user_id}")
 
     def __str__(self):
         return f"Referral code for {self.user.username}"
